@@ -175,6 +175,8 @@
     <dimen name="gesture_tutorial_menu_done_button_top_spacing">0dp</dimen>
     <dimen name="gesture_tutorial_menu_back_shape_bottom_margin">0dp</dimen>
     <dimen name="gesture_tutorial_menu_done_button_spacing">72dp</dimen>
+    <dimen name="gesture_tutorial_done_button_bottom_margin">40dp</dimen>
+    <dimen name="gesture_tutorial_done_button_end_margin">24dp</dimen>
 
     <!-- Gesture Tutorial mock conversations -->
     <dimen name="gesture_tutorial_message_icon_size">44dp</dimen>
@@ -325,9 +327,8 @@
     <dimen name="taskbar_contextual_padding_top">8dp</dimen>
     <dimen name="taskbar_nav_buttons_size">44dp</dimen>
     <dimen name="taskbar_split_instructions_margin">48dp</dimen>
-    <dimen name="taskbar_contextual_button_margin">120dp</dimen>
     <dimen name="taskbar_suw_insets">48dp</dimen>
-    <dimen name="taskbar_suw_frame">48dp</dimen>
+    <dimen name="taskbar_suw_frame">96dp</dimen>
     <dimen name="taskbar_hotseat_nav_spacing">24dp</dimen>
     <dimen name="taskbar_contextual_buttons_size">35dp</dimen>
     <dimen name="taskbar_stashed_size">24dp</dimen>
@@ -346,6 +347,11 @@
     <dimen name="taskbar_icon_size_kids">32dp</dimen>
     <dimen name="taskbar_all_apps_button_translation_x_offset">6dp</dimen>
     <dimen name="taskbar_all_apps_search_button_translation_x_offset">6dp</dimen>
+    <dimen name="taskbar_contextual_button_suw_margin">64dp</dimen>
+    <dimen name="taskbar_contextual_button_suw_height">64dp</dimen>
+    <dimen name="taskbar_back_button_suw_start_margin">48dp</dimen>
+    <dimen name="taskbar_back_button_suw_bottom_margin">1dp</dimen>
+    <dimen name="taskbar_back_button_suw_height">72dp</dimen>
 
     <!-- Transient taskbar -->
     <dimen name="transient_taskbar_padding">12dp</dimen>
@@ -396,6 +402,7 @@
     <dimen name="taskbar_edu_features_tooltip_width_with_one_feature">412dp</dimen>
     <dimen name="taskbar_edu_features_tooltip_width_with_two_features">428dp</dimen>
     <dimen name="taskbar_edu_features_tooltip_width_with_three_features">624dp</dimen>
+    <dimen name="taskbar_edu_search_subtitle_text_size">12sp</dimen>
 
     <!--- Taskbar Pinning -->
     <dimen name="taskbar_pinning_popup_menu_width">300dp</dimen>
@@ -456,5 +463,9 @@
     <dimen name="desktop_mode_floating_app_select_margin">16dp</dimen>
     <dimen name="desktop_mode_floating_app_select_text_size">14sp</dimen>
     <dimen name="desktop_mode_floating_app_select_text_margin">8dp</dimen>
+
+    <!-- Splitscreen -->
+    <!-- Max width of the split instructions view -->
+    <dimen name="split_instructions_view_max_width">220dp</dimen>
 
 </resources>

@@ -95,6 +95,7 @@
     <string name="action_share" msgid="2648470652637092375">"Deel"</string>
     <string name="action_screenshot" msgid="8171125848358142917">"Skermskoot"</string>
     <string name="action_split" msgid="2098009717623550676">"Verdeel"</string>
+    <string name="action_save_app_pair" msgid="5974823919237645229">"Stoor app-paar"</string>
     <string name="toast_split_select_app" msgid="8464310533320556058">"Tik op ’n ander app om verdeelde skerm te gebruik"</string>
     <string name="toast_contextual_split_select_app" msgid="433510957123687090">"Kies ’n ander app as jy verdeelde skerm wil gebruik"</string>
     <string name="toast_split_select_app_cancel" msgid="1532690483356445639"><b>"Kanselleer"</b></string>
@@ -115,6 +116,8 @@
     <string name="taskbar_edu_features" msgid="3320337287472848162">"Doen meer met die Taakbalk"</string>
     <string name="taskbar_edu_pinning_title" msgid="210102174154211712">"Wys altyd die Taakbalk"</string>
     <string name="taskbar_edu_pinning_standalone" msgid="2636919474366410467">"Raak en hou die verdeler in om altyd die Taakbalk onderaan jou skerm te wys"</string>
+    <string name="taskbar_search_edu_title" msgid="5569194922234364530">"Raak en hou die handelingsleutel om te soek wat op jou skerm is"</string>
+    <string name="taskbar_edu_search_disclosure" msgid="8734536088447779686">"Hierdie produk gebruik die gekose deel van jou skerm om te soek. Google se <xliff:g id="BEGIN_PRIVACY_LINK">&lt;a href="%1$s"&gt;</xliff:g>privaatheidsbeleid<xliff:g id="END_PRIVACY_LINK">&lt;/a&gt;</xliff:g> en <xliff:g id="BEGIN_TOS_LINK">&lt;a href="%2$s"&gt;</xliff:g>diensbepalings<xliff:g id="END_TOS_LINK">&lt;/a&gt;</xliff:g> geld."</string>
     <string name="taskbar_edu_close" msgid="887022990168191073">"Maak toe"</string>
     <string name="taskbar_edu_done" msgid="6880178093977704569">"Klaar"</string>
     <string name="taskbar_button_home" msgid="2151398979630664652">"Tuis"</string>

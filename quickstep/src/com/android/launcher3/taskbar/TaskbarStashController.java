@@ -321,8 +321,7 @@ public class TaskbarStashController implements TaskbarControllers.LoggableTaskba
         updateStateForFlag(FLAG_STASHED_IN_APP_AUTO, isStashedInAppAuto);
         updateStateForFlag(FLAG_STASHED_IN_APP_SETUP, isInSetup);
         updateStateForFlag(FLAG_IN_SETUP, isInSetup);
-        updateStateForFlag(FLAG_STASHED_SMALL_SCREEN, mActivity.isPhoneMode()
-                && !mActivity.isThreeButtonNav());
+        updateStateForFlag(FLAG_STASHED_SMALL_SCREEN, mActivity.isPhoneGestureNavMode());
         // For now, assume we're in an app, since LauncherTaskbarUIController won't be able to tell
         // us that we're paused until a bit later. This avoids flickering upon recreating taskbar.
         updateStateForFlag(FLAG_IN_APP, true);
@@ -427,14 +426,15 @@ public class TaskbarStashController implements TaskbarControllers.LoggableTaskba
      * @see android.view.WindowInsets.Type#systemBars()
      */
     public int getContentHeightToReportToApps() {
-        if ((mActivity.isPhoneMode() && !mActivity.isThreeButtonNav())
-                || DisplayController.isTransientTaskbar(mActivity)) {
+        if (mActivity.isUserSetupComplete() && (mActivity.isPhoneGestureNavMode()
+                || DisplayController.isTransientTaskbar(mActivity))) {
             return getStashedHeight();
         }
 
         if (supportsVisualStashing() && hasAnyFlag(FLAGS_REPORT_STASHED_INSETS_TO_APP)) {
             DeviceProfile dp = mActivity.getDeviceProfile();
-            if (hasAnyFlag(FLAG_STASHED_IN_APP_SETUP) && dp.isTaskbarPresent) {
+            if (hasAnyFlag(FLAG_STASHED_IN_APP_SETUP) && (dp.isTaskbarPresent
+                    || mActivity.isPhoneGestureNavMode())) {
                 // We always show the back button in SUW but in portrait the SUW layout may not
                 // be wide enough to support overlapping the nav bar with its content.
                 // We're sending different res values in portrait vs landscape
@@ -549,11 +549,12 @@ public class TaskbarStashController implements TaskbarControllers.LoggableTaskba
      *                            sub-animations are properly coordinated. This duration should not
      *                            actually be used since this animation tracks a swipe progress.
      */
-    protected void addUnstashToHotseatAnimation(AnimatorSet animation, int placeholderDuration) {
+    protected void addUnstashToHotseatAnimationFromSuw(AnimatorSet animation,
+            int placeholderDuration) {
         // Defer any UI updates now to avoid the UI becoming stale when the animation plays.
         mControllers.taskbarViewController.setDeferUpdatesForSUW(true);
         createAnimToIsStashed(
-                /* isStashed= */ false,
+                /* isStashed= */ mActivity.isPhoneMode(),
                 placeholderDuration,
                 TRANSITION_UNSTASH_SUW_MANUAL,
                 /* jankTag= */ "SUW_MANUAL");
@@ -598,7 +599,8 @@ public class TaskbarStashController implements TaskbarControllers.LoggableTaskba
                             ? stashTranslation : 0)
                     .setDuration(duration));
             mAnimator.play(mTaskbarImeBgAlpha.animateToValue(
-                    hasAnyFlag(FLAG_STASHED_IN_APP_IME) ? 0 : 1).setDuration(duration));
+                    (hasAnyFlag(FLAG_STASHED_IN_APP_IME) && isStashed) ? 0 : 1).setDuration(
+                    duration));
             mAnimator.addListener(AnimatorListeners.forEndCallback(() -> {
                 mAnimator = null;
                 mIsStashed = isStashed;
@@ -890,17 +892,11 @@ public class TaskbarStashController implements TaskbarControllers.LoggableTaskba
     }
 
     /**
-     * Should be called when a system gesture starts and settles, so we can defer updating
-     * FLAG_STASHED_IN_APP_IME until after the gesture transition completes.
+     * Should be called when a system gesture starts and settles, so we can remove
+     * FLAG_STASHED_IN_APP_IME while the gesture is in progress.
      */
     public void setSystemGestureInProgress(boolean inProgress) {
         mIsSystemGestureInProgress = inProgress;
-        if (mIsSystemGestureInProgress) {
-            return;
-        }
-
-        // Only update the following flags when system gesture is not in progress.
-        updateStateForFlag(FLAG_STASHED_IN_TASKBAR_ALL_APPS, false);
         setStashedImeState();
     }
 
@@ -952,12 +948,9 @@ public class TaskbarStashController implements TaskbarControllers.LoggableTaskba
                 && !hasAnyFlag(systemUiStateFlags, SYSUI_STATE_STATUS_BAR_KEYGUARD_GOING_AWAY);
         updateStateForFlag(FLAG_STASHED_DEVICE_LOCKED, isLocked);
 
-        // Only update FLAG_STASHED_IN_APP_IME when system gesture is not in progress.
         mIsImeShowing = hasAnyFlag(systemUiStateFlags, SYSUI_STATE_IME_SHOWING);
         mIsImeSwitcherShowing = hasAnyFlag(systemUiStateFlags, SYSUI_STATE_IME_SWITCHER_SHOWING);
-
-        if (!mIsSystemGestureInProgress) {
-            updateStateForFlag(FLAG_STASHED_IN_APP_IME, shouldStashForIme());
+        if (updateStateForFlag(FLAG_STASHED_IN_APP_IME, shouldStashForIme())) {
             animDuration = TASKBAR_STASH_DURATION_FOR_IME;
             startDelay = getTaskbarStashStartDelayForIme();
         }
@@ -970,7 +963,8 @@ public class TaskbarStashController implements TaskbarControllers.LoggableTaskba
      *
      * <p>Do not stash if in small screen, with 3 button nav, and in landscape (or seascape).
      * <p>Do not stash if taskbar is transient.
-     * <p>Do not stash if hardware keyboard is attached and taskbar is pinned and IME is docked
+     * <p>Do not stash if hardware keyboard is attached and taskbar is pinned and IME is docked.
+     * <p>Do not stash if a system gesture is started.
      */
     private boolean shouldStashForIme() {
         if (DisplayController.isTransientTaskbar(mActivity)) {
@@ -996,6 +990,11 @@ public class TaskbarStashController implements TaskbarControllers.LoggableTaskba
             return false;
         }
 
+        // Do not stash if a gesture started.
+        if (mIsSystemGestureInProgress) {
+            return false;
+        }
+
         return mIsImeShowing || mIsImeSwitcherShowing;
     }
 
@@ -1007,13 +1006,16 @@ public class TaskbarStashController implements TaskbarControllers.LoggableTaskba
      * @param flag    The flag to update.
      * @param enabled Whether to enable the flag: True will cause the task bar to be stashed /
      *                unstashed.
+     * @return Whether the flag state changed.
      */
-    public void updateStateForFlag(int flag, boolean enabled) {
+    public boolean updateStateForFlag(int flag, boolean enabled) {
+        int oldState = mState;
         if (enabled) {
             mState |= flag;
         } else {
             mState &= ~flag;
         }
+        return mState != oldState;
     }
 
     /**

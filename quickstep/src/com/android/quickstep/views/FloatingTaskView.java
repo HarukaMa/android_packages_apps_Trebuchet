@@ -189,7 +189,13 @@ public class FloatingTaskView extends FrameLayout {
                     viewBounds, false /* ignoreTransform */, null /* recycle */,
                     mStartingPosition);
         }
-
+        // In some cases originalView is off-screen so we don't get a valid starting position
+        // ex. on rotation
+        // TODO(b/345556328) We shouldn't be animating if starting position of view isn't ready
+        if (mStartingPosition.isEmpty()) {
+            // Set to non empty for now so calculations in #update() don't break
+            mStartingPosition.set(0, 0, 1, 1);
+        }
         final BaseDragLayer.LayoutParams lp = new BaseDragLayer.LayoutParams(
                 Math.round(mStartingPosition.width()),
                 Math.round(mStartingPosition.height()));
@@ -299,7 +305,6 @@ public class FloatingTaskView extends FrameLayout {
 
         ValueAnimator transitionAnimator = ValueAnimator.ofFloat(0, 1);
         animation.add(transitionAnimator);
-        long animDuration = animation.getDuration();
         RectF floatingTaskViewBounds = new RectF();
 
         if (fadeWithThumbnail) {
@@ -328,20 +333,20 @@ public class FloatingTaskView extends FrameLayout {
 
         MultiValueUpdateListener listener = new MultiValueUpdateListener() {
             // SplitPlaceholderView: rectangle translates and stretches to new position
-            final FloatProp mDx = new FloatProp(0, prop.dX, 0, animDuration,
+            final FloatProp mDx = new FloatProp(0, prop.dX,
                     clampToProgress(timings.getStagedRectXInterpolator(),
                             timings.getStagedRectSlideStartOffset(),
                             timings.getStagedRectSlideEndOffset()));
-            final FloatProp mDy = new FloatProp(0, prop.dY, 0, animDuration,
+            final FloatProp mDy = new FloatProp(0, prop.dY,
                     clampToProgress(timings.getStagedRectYInterpolator(),
                             timings.getStagedRectSlideStartOffset(),
                             timings.getStagedRectSlideEndOffset()));
-            final FloatProp mTaskViewScaleX = new FloatProp(1f, prop.finalTaskViewScaleX, 0,
-                    animDuration, clampToProgress(timings.getStagedRectScaleXInterpolator(),
+            final FloatProp mTaskViewScaleX = new FloatProp(1f, prop.finalTaskViewScaleX,
+                    clampToProgress(timings.getStagedRectScaleXInterpolator(),
                     timings.getStagedRectSlideStartOffset(),
                     timings.getStagedRectSlideEndOffset()));
-            final FloatProp mTaskViewScaleY = new FloatProp(1f, prop.finalTaskViewScaleY, 0,
-                    animDuration, clampToProgress(timings.getStagedRectScaleYInterpolator(),
+            final FloatProp mTaskViewScaleY = new FloatProp(1f, prop.finalTaskViewScaleY,
+                    clampToProgress(timings.getStagedRectScaleYInterpolator(),
                     timings.getStagedRectSlideStartOffset(),
                     timings.getStagedRectSlideEndOffset()));
             @Override

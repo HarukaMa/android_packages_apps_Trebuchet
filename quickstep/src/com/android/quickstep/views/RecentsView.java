@@ -62,8 +62,6 @@ import static com.android.quickstep.util.TaskGridNavHelper.DIRECTION_TAB;
 import static com.android.quickstep.util.TaskGridNavHelper.DIRECTION_UP;
 import static com.android.quickstep.views.ClearAllButton.DISMISS_ALPHA;
 import static com.android.quickstep.views.DesktopTaskView.isDesktopModeSupported;
-import static com.android.quickstep.views.OverviewActionsView.FLAG_IS_NOT_TABLET;
-import static com.android.quickstep.views.OverviewActionsView.FLAG_SINGLE_TASK;
 import static com.android.quickstep.views.OverviewActionsView.HIDDEN_ACTIONS_IN_MENU;
 import static com.android.quickstep.views.OverviewActionsView.HIDDEN_DESKTOP;
 import static com.android.quickstep.views.OverviewActionsView.HIDDEN_NON_ZERO_ROTATION;
@@ -724,6 +722,11 @@ public abstract class RecentsView<ACTIVITY_TYPE extends StatefulActivity<STATE_T
     private int mSplitHiddenTaskViewIndex = -1;
     @Nullable
     private FloatingTaskView mSecondFloatingTaskView;
+    /**
+     * A fullscreen scrim that goes behind the splitscreen animation to hide color conflicts and
+     * possible flickers. Removed after tasks + divider finish animating in.
+     */
+    private View mSplitScrim;
 
     /**
      * The task to be removed and immediately re-added. Should not be added to task pool.
@@ -1065,6 +1068,8 @@ public abstract class RecentsView<ACTIVITY_TYPE extends StatefulActivity<STATE_T
             @Nullable DesktopRecentsTransitionController desktopRecentsTransitionController) {
         mActionsView = actionsView;
         mActionsView.updateHiddenFlags(HIDDEN_NO_TASKS, getTaskViewCount() == 0);
+        // Update flags for 1p/3p launchers
+        mActionsView.updateFor3pLauncher(!supportsAppPairs());
         mSplitSelectStateController = splitController;
         mDesktopRecentsTransitionController = desktopRecentsTransitionController;
     }
@@ -1255,16 +1260,23 @@ public abstract class RecentsView<ACTIVITY_TYPE extends StatefulActivity<STATE_T
             ValueAnimator appAnimator = ValueAnimator.ofFloat(0, 1);
             appAnimator.setDuration(RECENTS_LAUNCH_DURATION);
             appAnimator.setInterpolator(ACCELERATE_DECELERATE);
+            final Matrix matrix = new Matrix();
             appAnimator.addUpdateListener(valueAnimator -> {
                 float percent = valueAnimator.getAnimatedFraction();
                 SurfaceTransaction transaction = new SurfaceTransaction();
-                Matrix matrix = new Matrix();
-                matrix.postScale(percent, percent);
-                matrix.postTranslate(mActivity.getDeviceProfile().widthPx * (1 - percent) / 2,
-                        mActivity.getDeviceProfile().heightPx * (1 - percent) / 2);
-                transaction.forSurface(apps[apps.length - 1].leash)
-                        .setAlpha(percent)
-                        .setMatrix(matrix);
+                for (int i = apps.length - 1; i >= 0; --i) {
+                    RemoteAnimationTarget app = apps[i];
+
+                    float dx = mActivity.getDeviceProfile().widthPx * (1 - percent) / 2
+                            + app.screenSpaceBounds.left * percent;
+                    float dy = mActivity.getDeviceProfile().heightPx * (1 - percent) / 2
+                            + app.screenSpaceBounds.top * percent;
+                    matrix.setScale(percent, percent);
+                    matrix.postTranslate(dx, dy);
+                    transaction.forSurface(app.leash)
+                            .setAlpha(percent)
+                            .setMatrix(matrix);
+                }
                 surfaceApplier.scheduleApply(transaction);
             });
             appAnimator.addListener(new AnimatorListenerAdapter() {
@@ -2018,7 +2030,7 @@ public abstract class RecentsView<ACTIVITY_TYPE extends StatefulActivity<STATE_T
         mClearAllButton.setFullscreenProgress(fullscreenProgress);
 
         // Fade out the actions view quickly (0.1 range)
-        mActionsView.getFullscreenAlpha().setValue(
+        mActionsView.getFullscreenAlpha().updateValue(
                 mapToRange(fullscreenProgress, 0, 0.1f, 1f, 0f, LINEAR));
     }
 
@@ -2277,8 +2289,8 @@ public abstract class RecentsView<ACTIVITY_TYPE extends StatefulActivity<STATE_T
     }
 
     private void animateActionsViewAlpha(float alphaValue, long duration) {
-        mActionsViewAlphaAnimator = ObjectAnimator.ofFloat(
-                mActionsView.getVisibilityAlpha(), MULTI_PROPERTY_VALUE, alphaValue);
+        mActionsViewAlphaAnimator = ObjectAnimator.ofFloat(mActionsView.getVisibilityAlpha(),
+                AnimatedFloat.VALUE, alphaValue);
         mActionsViewAlphaAnimatorFinalValue = alphaValue;
         mActionsViewAlphaAnimator.setDuration(duration);
         // Set autocancel to prevent race-conditiony setting of alpha from other animations
@@ -2297,7 +2309,7 @@ public abstract class RecentsView<ACTIVITY_TYPE extends StatefulActivity<STATE_T
         mClearAllButton.onRecentsViewScroll(scroll, mOverviewGridEnabled);
 
         // Clear all button alpha was set by the previous line.
-        mActionsView.getIndexScrollAlpha().setValue(1 - mClearAllButton.getScrollAlpha());
+        mActionsView.getIndexScrollAlpha().updateValue(1 - mClearAllButton.getScrollAlpha());
     }
 
     @Override
@@ -2752,18 +2764,20 @@ public abstract class RecentsView<ACTIVITY_TYPE extends StatefulActivity<STATE_T
      * Returns true if we should add a stub taskView for the running task id
      */
     protected boolean shouldAddStubTaskView(Task[] runningTasks) {
-        if (runningTasks.length > 1) {
-            TaskView primaryTaskView = getTaskViewByTaskId(runningTasks[0].key.id);
-            TaskView secondaryTaskView = getTaskViewByTaskId(runningTasks[1].key.id);
-            int leftTopTaskViewId =
-                    (primaryTaskView == null) ? -1 : primaryTaskView.getTaskViewId();
-            int rightBottomTaskViewId =
-                    (secondaryTaskView == null) ? -1 : secondaryTaskView.getTaskViewId();
-            // Add a new stub view if both taskIds don't match any taskViews
-            return leftTopTaskViewId != rightBottomTaskViewId || leftTopTaskViewId == -1;
+        TaskView taskView = getTaskViewByTaskId(runningTasks[0].key.id);
+        if (taskView == null) {
+            // No TaskView found, add a stub task.
+            return true;
         }
-        Task runningTaskInfo = runningTasks[0];
-        return runningTaskInfo != null && getTaskViewByTaskId(runningTaskInfo.key.id) == null;
+
+        if (runningTasks.length > 1) {
+            // Ensure all taskIds matches the TaskView, otherwise add a stub task.
+            return Arrays.stream(runningTasks).anyMatch(
+                    runningTask -> !taskView.containsTaskId(runningTask.key.id));
+        } else {
+            // Ensure the TaskView only contains a single taskId, otherwise add a stub task.
+            return taskView.containsMultipleTasks();
+        }
     }
 
     /**
@@ -4008,24 +4022,35 @@ public abstract class RecentsView<ACTIVITY_TYPE extends StatefulActivity<STATE_T
     }
 
     /**
-     * Hides all overview actions if current page is for split apps, shows otherwise
-     * If actions are showing, we only show split option if
+     * Hides all overview actions if user is halfway through split selection, shows otherwise.
+     * We only show split option if:
+     * * Focused view is a single app
      * * Device is large screen
-     * * There are at least 2 tasks to invoke split
-     * Unconditionally hide split option for Go-enabled targets
      */
     private void updateCurrentTaskActionsVisibility() {
-        boolean isCurrentSplit = getCurrentPageTaskView() instanceof GroupedTaskView;
-        mActionsView.updateHiddenFlags(HIDDEN_SPLIT_SCREEN, isCurrentSplit);
+        TaskView taskView = getCurrentPageTaskView();
+        boolean isCurrentSplit = taskView instanceof GroupedTaskView;
+        GroupedTaskView groupedTaskView = isCurrentSplit ? (GroupedTaskView) taskView : null;
+        // Update flags to see if entire actions bar should be hidden.
+        if (!FeatureFlags.enableAppPairs()) {
+            mActionsView.updateHiddenFlags(HIDDEN_SPLIT_SCREEN, isCurrentSplit);
+        }
         mActionsView.updateHiddenFlags(HIDDEN_SPLIT_SELECT_ACTIVE, isSplitSelectionActive());
-        mActionsView.updateSplitButtonHiddenFlags(FLAG_IS_NOT_TABLET,
-                !mActivity.getDeviceProfile().isTablet ||
-                getContext().getSystemService(ActivityManager.class).isLowRamDevice());
-        mActionsView.updateSplitButtonDisabledFlags(FLAG_SINGLE_TASK, /*enable=*/ false);
+        // Update flags to see if actions bar should show buttons for a single task or a pair of
+        // tasks.
+        boolean canSaveAppPair = isCurrentSplit && supportsAppPairs() &&
+                getSplitSelectController().getAppPairsController().canSaveAppPair(groupedTaskView);
+        mActionsView.updateForGroupedTask(isCurrentSplit, canSaveAppPair);
+
         if (isDesktopModeSupported()) {
             boolean isCurrentDesktop = getCurrentPageTaskView() instanceof DesktopTaskView;
             mActionsView.updateHiddenFlags(HIDDEN_DESKTOP, isCurrentDesktop);
         }
+    }
+
+    /** Returns if app pairs are supported in this launcher. Overridden in subclasses. */
+    public boolean supportsAppPairs() {
+        return true;
     }
 
     /**
@@ -4296,7 +4321,7 @@ public abstract class RecentsView<ACTIVITY_TYPE extends StatefulActivity<STATE_T
         int alphaInt = Math.round(alpha * 255);
         mEmptyMessagePaint.setAlpha(alphaInt);
         mEmptyIcon.setAlpha(alphaInt);
-        mActionsView.getContentAlpha().setValue(mContentAlpha);
+        mActionsView.getContentAlpha().updateValue(mContentAlpha);
 
         if (alpha > 0) {
             setVisibility(VISIBLE);
@@ -4877,6 +4902,8 @@ public abstract class RecentsView<ACTIVITY_TYPE extends StatefulActivity<STATE_T
                 mSplitSelectStateController.getActiveSplitStagePosition(), firstTaskEndingBounds,
                 secondTaskEndingBounds);
 
+        mSplitScrim = mSplitSelectStateController.getSplitAnimationController()
+                .addScrimBehindAnim(pendingAnimation, mActivity, getContext());
         FloatingTaskView firstFloatingTaskView =
                 mSplitSelectStateController.getFirstFloatingTaskView();
         firstFloatingTaskView.getBoundsOnScreen(firstTaskStartingBounds);
@@ -4931,6 +4958,7 @@ public abstract class RecentsView<ACTIVITY_TYPE extends StatefulActivity<STATE_T
             safeRemoveDragLayerView(mSplitSelectStateController.getFirstFloatingTaskView());
             safeRemoveDragLayerView(mSecondFloatingTaskView);
             safeRemoveDragLayerView(mSplitSelectStateController.getSplitInstructionsView());
+            safeRemoveDragLayerView(mSplitScrim);
             mSecondFloatingTaskView = null;
             mSplitSelectSource = null;
             mSplitSelectStateController.getSplitAnimationController()
@@ -5413,6 +5441,10 @@ public abstract class RecentsView<ACTIVITY_TYPE extends StatefulActivity<STATE_T
         finishRecentsAnimation(toRecents, true /* shouldPip */, onFinishComplete);
     }
 
+    /**
+     * NOTE: Whatever value gets passed through to the toRecents param may need to also be set on
+     * {@link #mRecentsAnimationController#setWillFinishToHome}.
+     */
     public void finishRecentsAnimation(boolean toRecents, boolean shouldPip,
             @Nullable Runnable onFinishComplete) {
         Log.d(TAG, "finishRecentsAnimation - mRecentsAnimationController: "

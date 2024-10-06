@@ -38,6 +38,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.android.launcher3.Flags;
 import com.android.launcher3.PendingAddItemInfo;
 import com.android.launcher3.R;
 import com.android.launcher3.Utilities;
@@ -102,6 +103,21 @@ public class PackageManagerHelper {
             @NonNull final UserHandle user) {
         final ApplicationInfo info = getApplicationInfo(packageName, user, 0);
         return info != null;
+    }
+
+    /**
+     * Returns whether the target app is archived for a given user
+     */
+    public boolean isAppArchivedForUser(@NonNull final String packageName,
+            @NonNull final UserHandle user) {
+        if (!Flags.enableSupportForArchiving()) {
+            return false;
+        }
+        final ApplicationInfo info = getApplicationInfo(
+                // LauncherApps does not support long flags currently. Since archived apps are
+                // subset of uninstalled apps, this filter also includes archived apps.
+                packageName, user, PackageManager.MATCH_UNINSTALLED_PACKAGES);
+        return info != null && info.isArchived;
     }
 
     /**
@@ -172,7 +188,7 @@ public class PackageManagerHelper {
     public void startDetailsActivityForInfo(ItemInfo info, Rect sourceBounds, Bundle opts) {
         if (info instanceof ItemInfoWithIcon
                 && (((ItemInfoWithIcon) info).runtimeStatusFlags
-                    & ItemInfoWithIcon.FLAG_INSTALL_SESSION_ACTIVE) != 0) {
+                & ItemInfoWithIcon.FLAG_INSTALL_SESSION_ACTIVE) != 0) {
             ItemInfoWithIcon appInfo = (ItemInfoWithIcon) info;
             mContext.startActivity(ApiWrapper.getAppMarketActivityIntent(mContext,
                     appInfo.getTargetComponent().getPackageName(), Process.myUserHandle()));
@@ -251,6 +267,7 @@ public class PackageManagerHelper {
 
     /**
      * Returns true if Launcher has the permission to access shortcuts.
+     *
      * @see LauncherApps#hasShortcutHostPermission()
      */
     public static boolean hasShortcutsPermission(Context context) {
@@ -274,6 +291,6 @@ public class PackageManagerHelper {
     @SuppressWarnings("NewApi")
     private boolean isPackageInstalledOrArchived(ApplicationInfo info) {
         return (info.flags & ApplicationInfo.FLAG_INSTALLED) != 0 || (
-                Utilities.enableSupportForArchiving() && info.isArchived);
+                Flags.enableSupportForArchiving() && info.isArchived);
     }
 }

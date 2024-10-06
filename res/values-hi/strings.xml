@@ -33,6 +33,7 @@
     <string name="app_pair_default_title" msgid="4045241727446873529">"<xliff:g id="APP1">%1$s</xliff:g> | <xliff:g id="APP2">%2$s</xliff:g>"</string>
     <string name="app_pair_unlaunchable_at_screen_size" msgid="3446551575502685376">"साथ में इस्तेमाल किए जा सकने वाले ये ऐप्लिकेशन, इस डिवाइस पर काम नहीं कर सकते"</string>
     <string name="app_pair_needs_unfold" msgid="4588897528143807002">"साथ में इस्तेमाल किए जा सकने वाले ये ऐप्लिकेशन इस्तेमाल करने के लिए डिवाइस को अनफ़ोल्ड करें"</string>
+    <string name="app_pair_not_available" msgid="3556767440808032031">"साथ में इस्तेमाल किए जा सकने वाले ऐप्लिकेशन की सुविधा उपलब्ध नहीं है"</string>
     <string name="long_press_widget_to_add" msgid="3587712543577675817">"किसी विजेट को एक से दूसरी जगह ले जाने के लिए, उसे दबाकर रखें."</string>
     <string name="long_accessible_way_to_add" msgid="2733588281439571974">"किसी विजेट को एक से दूसरी जगह ले जाने के लिए, उस पर दो बार टैप करके दबाकर रखें या पसंद के मुताबिक कार्रवाइयां इस्तेमाल करें."</string>
     <string name="widget_dims_format" msgid="2370757736025621599">"%1$d × %2$d"</string>
@@ -123,7 +124,7 @@
     <string name="title_missing_notification_access" msgid="7503287056163941064">"सूचना के ऐक्सेस की ज़रूरत है"</string>
     <string name="msg_missing_notification_access" msgid="281113995110910548">"सूचना बिंदु दिखाने के लिए, <xliff:g id="NAME">%1$s</xliff:g> के ऐप्लिकेशन सूचना चालू करें"</string>
     <string name="title_change_settings" msgid="1376365968844349552">"सेटिंग बदलें"</string>
-    <string name="notification_dots_service_title" msgid="4284221181793592871">"नई सूचनाएं बताने वाला गोल निशान दिखाएं"</string>
+    <string name="notification_dots_service_title" msgid="4284221181793592871">"सूचनाएं बताने वाले डॉट दिखाएं"</string>
     <string name="developer_options_title" msgid="700788437593726194">"डेवलपर के लिए सेटिंग और टूल"</string>
     <string name="auto_add_shortcuts_label" msgid="4926805029653694105">"होम स्क्रीन पर ऐप्लिकेशन के आइकॉन जोड़ें"</string>
     <string name="auto_add_shortcuts_description" msgid="7117251166066978730">"नए ऐप्लिकेशन के लिए"</string>

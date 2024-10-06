@@ -142,6 +142,9 @@ public class NavbarButtonsViewController implements TaskbarControllers.LoggableT
 
     private static final String NAV_BUTTONS_SEPARATE_WINDOW_TITLE = "Taskbar Nav Buttons";
 
+    private static final double SQUARE_ASPECT_RATIO_BOTTOM_BOUND = 0.95;
+    private static final double SQUARE_ASPECT_RATIO_UPPER_BOUND = 1.05;
+
     public static final int ALPHA_INDEX_IMMERSIVE_MODE = 0;
     public static final int ALPHA_INDEX_KEYGUARD_OR_DISABLE = 1;
     public static final int ALPHA_INDEX_SUW = 2;
@@ -314,38 +317,28 @@ public class NavbarButtonsViewController implements TaskbarControllers.LoggableT
             mPropertyHolders.add(new StatePropertyHolder(
                     mControllers.taskbarDragLayerController.getNavbarBackgroundAlpha(),
                     flags -> (flags & FLAG_ONLY_BACK_FOR_BOUNCER_VISIBLE) != 0));
-
-            // Rotation button
-            RotationButton rotationButton = new RotationButtonImpl(
-                    addButton(mEndContextualContainer, R.id.rotate_suggestion,
-                            R.layout.taskbar_contextual_button));
-            rotationButton.hide();
-            mControllers.rotationButtonController.setRotationButton(rotationButton, null);
-        } else {
-            mFloatingRotationButton = new FloatingRotationButton(
-                    ENABLE_TASKBAR_NAVBAR_UNIFICATION ? mNavigationBarPanelContext : mContext,
-                    R.string.accessibility_rotate_button,
-                    R.layout.rotate_suggestion,
-                    R.id.rotate_suggestion,
-                    R.dimen.floating_rotation_button_min_margin,
-                    R.dimen.rounded_corner_content_padding,
-                    R.dimen.floating_rotation_button_taskbar_left_margin,
-                    R.dimen.floating_rotation_button_taskbar_bottom_margin,
-                    R.dimen.floating_rotation_button_diameter,
-                    R.dimen.key_button_ripple_max_width,
-                    R.bool.floating_rotation_button_position_left);
-            mControllers.rotationButtonController.setRotationButton(mFloatingRotationButton,
-                    mRotationButtonListener);
-
-            if (!mIsImeRenderingNavButtons) {
-                View imeDownButton = addButton(R.drawable.ic_sysbar_back, BUTTON_BACK,
-                        mStartContextualContainer, mControllers.navButtonController, R.id.back);
-                imeDownButton.setRotation(Utilities.isRtl(resources) ? 90 : -90);
-                // Only show when IME is visible.
-                mPropertyHolders.add(new StatePropertyHolder(imeDownButton,
-                        flags -> (flags & FLAG_IME_VISIBLE) != 0));
-            }
+        } else if (!mIsImeRenderingNavButtons) {
+            View imeDownButton = addButton(R.drawable.ic_sysbar_back, BUTTON_BACK,
+                    mStartContextualContainer, mControllers.navButtonController, R.id.back);
+            imeDownButton.setRotation(Utilities.isRtl(resources) ? 90 : -90);
+            // Only show when IME is visible.
+            mPropertyHolders.add(new StatePropertyHolder(imeDownButton,
+                    flags -> (flags & FLAG_IME_VISIBLE) != 0));
         }
+        mFloatingRotationButton = new FloatingRotationButton(
+                ENABLE_TASKBAR_NAVBAR_UNIFICATION ? mNavigationBarPanelContext : mContext,
+                R.string.accessibility_rotate_button,
+                R.layout.rotate_suggestion,
+                R.id.rotate_suggestion,
+                R.dimen.floating_rotation_button_min_margin,
+                R.dimen.rounded_corner_content_padding,
+                R.dimen.floating_rotation_button_taskbar_left_margin,
+                R.dimen.floating_rotation_button_taskbar_bottom_margin,
+                R.dimen.floating_rotation_button_diameter,
+                R.dimen.key_button_ripple_max_width,
+                R.bool.floating_rotation_button_position_left);
+        mControllers.rotationButtonController.setRotationButton(mFloatingRotationButton,
+                mRotationButtonListener);
 
         applyState();
         mPropertyHolders.forEach(StatePropertyHolder::endAnimation);
@@ -383,8 +376,15 @@ public class NavbarButtonsViewController implements TaskbarControllers.LoggableT
                             (flags & FLAG_ONLY_BACK_FOR_BOUNCER_VISIBLE) != 0 ||
                             (flags & FLAG_KEYGUARD_OCCLUDED) != 0;
                     return (flags & FLAG_DISABLE_BACK) == 0
+                            && (!mContext.isGestureNav() || !mContext.isUserSetupComplete())
                             && ((flags & FLAG_KEYGUARD_VISIBLE) == 0 || showingOnKeyguard);
                 }));
+        // Hide back button in SUW if keyboard is showing (IME draws its own back).
+        if (mIsImeRenderingNavButtons) {
+            mPropertyHolders.add(new StatePropertyHolder(
+                    mBackButtonAlpha.get(ALPHA_INDEX_SUW),
+                    flags -> (flags & FLAG_IME_VISIBLE) == 0));
+        }
         mPropertyHolders.add(new StatePropertyHolder(mBackButton,
                 flags -> (flags & FLAG_IME_VISIBLE) != 0,
                 ROTATION_DRAWABLE_PERCENT, 1f, 0f));
@@ -407,8 +407,8 @@ public class NavbarButtonsViewController implements TaskbarControllers.LoggableT
         mPropertyHolders.add(
                 new StatePropertyHolder(mHomeButtonAlpha.get(
                         ALPHA_INDEX_KEYGUARD_OR_DISABLE),
-                flags -> (flags & FLAG_KEYGUARD_VISIBLE) == 0 &&
-                        (flags & FLAG_DISABLE_HOME) == 0));
+                        flags -> (flags & FLAG_KEYGUARD_VISIBLE) == 0
+                                && (flags & FLAG_DISABLE_HOME) == 0 && !mContext.isGestureNav()));
 
         // Recents button
         mRecentsButton = addButton(R.drawable.ic_sysbar_recent, BUTTON_RECENTS,
@@ -426,7 +426,7 @@ public class NavbarButtonsViewController implements TaskbarControllers.LoggableT
         });
         mPropertyHolders.add(new StatePropertyHolder(mRecentsButton,
                 flags -> (flags & FLAG_KEYGUARD_VISIBLE) == 0 && (flags & FLAG_DISABLE_RECENTS) == 0
-                        && !mContext.isNavBarKidsModeActive()));
+                        && !mContext.isNavBarKidsModeActive() && !mContext.isGestureNav()));
 
         // A11y button
         mA11yButton = addButton(R.drawable.ic_sysbar_accessibility_button, BUTTON_A11Y,
@@ -735,18 +735,39 @@ public class NavbarButtonsViewController implements TaskbarControllers.LoggableT
         // end-aligned, so start-align instead.
         FrameLayout.LayoutParams navButtonsLayoutParams = (FrameLayout.LayoutParams)
                 mNavButtonContainer.getLayoutParams();
+        FrameLayout.LayoutParams navButtonsViewLayoutParams = (FrameLayout.LayoutParams)
+                mNavButtonsView.getLayoutParams();
         Resources resources = mContext.getResources();
         DeviceProfile deviceProfile = mContext.getDeviceProfile();
-        int setupMargin = resources.getDimensionPixelSize(R.dimen.taskbar_contextual_button_margin);
-        navButtonsLayoutParams.setMarginStart(setupMargin);
-        navButtonsLayoutParams.bottomMargin = !deviceProfile.isLandscape
-                ? 0
-                : setupMargin -
-                        (resources.getDimensionPixelSize(R.dimen.taskbar_nav_buttons_size) / 2);
+
         navButtonsLayoutParams.setMarginEnd(0);
         navButtonsLayoutParams.gravity = Gravity.START;
-        mNavButtonsView.getLayoutParams().height =
-                mControllers.taskbarActivityContext.getSetupWindowSize();
+        mControllers.taskbarActivityContext.setTaskbarWindowSize(
+                mControllers.taskbarActivityContext.getSetupWindowSize());
+
+        // If SUW is on a large screen device that is landscape (or has a square aspect
+        // ratio) the back button has to be placed accordingly
+        if ((deviceProfile.isTablet && deviceProfile.isLandscape)
+                || (deviceProfile.aspectRatio > SQUARE_ASPECT_RATIO_BOTTOM_BOUND
+                && deviceProfile.aspectRatio < SQUARE_ASPECT_RATIO_UPPER_BOUND)) {
+            navButtonsLayoutParams.setMarginStart(
+                    resources.getDimensionPixelSize(R.dimen.taskbar_back_button_suw_start_margin));
+            navButtonsViewLayoutParams.bottomMargin = resources.getDimensionPixelSize(
+                    R.dimen.taskbar_back_button_suw_bottom_margin);
+            navButtonsLayoutParams.height = resources.getDimensionPixelSize(
+                    R.dimen.taskbar_back_button_suw_height);
+        } else {
+            int phoneOrPortraitSetupMargin = resources.getDimensionPixelSize(
+                    R.dimen.taskbar_contextual_button_suw_margin);
+            navButtonsLayoutParams.setMarginStart(phoneOrPortraitSetupMargin);
+            navButtonsLayoutParams.bottomMargin = !deviceProfile.isLandscape
+                    ? 0
+                    : phoneOrPortraitSetupMargin - (resources.getDimensionPixelSize(
+                            R.dimen.taskbar_nav_buttons_size) / 2);
+            navButtonsViewLayoutParams.height = resources.getDimensionPixelSize(
+                    R.dimen.taskbar_contextual_button_suw_height);
+        }
+        mNavButtonsView.setLayoutParams(navButtonsViewLayoutParams);
         mNavButtonContainer.setLayoutParams(navButtonsLayoutParams);
     }
 
@@ -767,7 +788,6 @@ public class NavbarButtonsViewController implements TaskbarControllers.LoggableT
             NavButtonLayoutter navButtonLayoutter =
                     NavButtonLayoutFactory.Companion.getUiLayoutter(
                             dp, mNavButtonsView, mImeSwitcherButton,
-                            mControllers.rotationButtonController.getRotationButton(),
                             mA11yButton, mSpace, res, isInKidsMode, isInSetup, isThreeButtonNav,
                             mContext.isPhoneMode(), mWindowManagerProxy.getRotation(mContext));
             navButtonLayoutter.layoutButtons(mContext, isA11yButtonPersistent());
@@ -778,13 +798,6 @@ public class NavbarButtonsViewController implements TaskbarControllers.LoggableT
 
         if (isInSetup) {
             handleSetupUi();
-
-            // Hide back button in SUW if keyboard is showing (IME draws its own back).
-            if (mIsImeRenderingNavButtons) {
-                mPropertyHolders.add(new StatePropertyHolder(
-                        mBackButtonAlpha.get(ALPHA_INDEX_SUW),
-                        flags -> (flags & FLAG_IME_VISIBLE) == 0));
-            }
         } else if (isInKidsMode) {
             int iconSize = res.getDimensionPixelSize(
                     R.dimen.taskbar_icon_size_kids);

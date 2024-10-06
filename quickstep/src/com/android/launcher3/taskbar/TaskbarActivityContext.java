@@ -36,14 +36,12 @@ import static com.android.launcher3.config.FeatureFlags.enableTaskbarPinning;
 import static com.android.launcher3.logging.StatsLogManager.LauncherEvent.LAUNCHER_FOLDER_OPEN;
 import static com.android.launcher3.taskbar.TaskbarAutohideSuspendController.FLAG_AUTOHIDE_SUSPEND_DRAGGING;
 import static com.android.launcher3.taskbar.TaskbarAutohideSuspendController.FLAG_AUTOHIDE_SUSPEND_FULLSCREEN;
-import static com.android.launcher3.taskbar.TaskbarDragLayerController.TASKBAR_REAPPEAR_DELAY_MS;
 import static com.android.launcher3.testing.shared.ResourceUtils.getBoolByName;
 import static com.android.quickstep.util.AnimUtils.completeRunnableListCallback;
 import static com.android.systemui.shared.system.QuickStepContract.SYSUI_STATE_NOTIFICATION_PANEL_VISIBLE;
 import static com.android.systemui.shared.system.QuickStepContract.SYSUI_STATE_VOICE_INTERACTION_WINDOW_SHOWING;
 
 import android.animation.AnimatorSet;
-import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.app.ActivityOptions;
 import android.content.ActivityNotFoundException;
@@ -81,7 +79,6 @@ import com.android.launcher3.DeviceProfile;
 import com.android.launcher3.LauncherPrefs;
 import com.android.launcher3.LauncherSettings.Favorites;
 import com.android.launcher3.R;
-import com.android.launcher3.anim.AnimatedFloat;
 import com.android.launcher3.anim.AnimatorPlaybackController;
 import com.android.launcher3.apppairs.AppPairIcon;
 import com.android.launcher3.config.FeatureFlags;
@@ -91,6 +88,7 @@ import com.android.launcher3.folder.FolderIcon;
 import com.android.launcher3.logger.LauncherAtom;
 import com.android.launcher3.logging.StatsLogManager;
 import com.android.launcher3.model.data.AppInfo;
+import com.android.launcher3.model.data.AppPairInfo;
 import com.android.launcher3.model.data.FolderInfo;
 import com.android.launcher3.model.data.ItemInfo;
 import com.android.launcher3.model.data.WorkspaceItemInfo;
@@ -301,7 +299,7 @@ public class TaskbarActivityContext extends BaseTaskbarContext {
                 isDesktopMode
                         ? new DesktopTaskbarRecentAppsController(this)
                         : TaskbarRecentAppsController.DEFAULT,
-                new TaskbarEduTooltipController(this),
+                TaskbarEduTooltipController.newInstance(this),
                 new KeyboardQuickSwitchController(),
                 new TaskbarPinningController(this),
                 bubbleControllersOptional);
@@ -944,12 +942,18 @@ public class TaskbarActivityContext extends BaseTaskbarContext {
         }
         if (landscapePhoneButtonNav) {
             mWindowLayoutParams.width = size;
-            mWindowLayoutParams.paramsForRotation[getDisplay().getRotation()].width = size;
+            for (int rot = Surface.ROTATION_0; rot <= Surface.ROTATION_270; rot++) {
+                mWindowLayoutParams.paramsForRotation[rot].width = size;
+            }
         } else {
             mWindowLayoutParams.height = size;
-            mWindowLayoutParams.paramsForRotation[getDisplay().getRotation()].height = size;
+            for (int rot = Surface.ROTATION_0; rot <= Surface.ROTATION_270; rot++) {
+                mWindowLayoutParams.paramsForRotation[rot].height = size;
+            }
         }
-        mControllers.taskbarInsetsController.onTaskbarOrBubblebarWindowHeightOrInsetsChanged();
+        mControllers.runAfterInit(
+                mControllers.taskbarInsetsController
+                        ::onTaskbarOrBubblebarWindowHeightOrInsetsChanged);
         notifyUpdateLayoutParams();
     }
 
@@ -1080,11 +1084,11 @@ public class TaskbarActivityContext extends BaseTaskbarContext {
             ActivityManagerWrapper.getInstance().startActivityFromRecents(task.key,
                     ActivityOptions.makeBasic());
             mControllers.taskbarStashController.updateAndAnimateTransientTaskbar(true);
-        } else if (tag instanceof FolderInfo fi && fi.itemType == Favorites.ITEM_TYPE_FOLDER) {
+        } else if (tag instanceof FolderInfo) {
             // Tapping an expandable folder icon on Taskbar
             shouldCloseAllOpenViews = false;
             expandFolder((FolderIcon) view);
-        } else if (tag instanceof FolderInfo fi && fi.itemType == Favorites.ITEM_TYPE_APP_PAIR) {
+        } else if (tag instanceof AppPairInfo api) {
             // Tapping an app pair icon on Taskbar
             if (recents != null && recents.isSplitSelectionActive()) {
                 // TODO (b/274835596): Implement "can't split with this" bounce animation
@@ -1092,8 +1096,8 @@ public class TaskbarActivityContext extends BaseTaskbarContext {
                         Toast.LENGTH_SHORT).show();
             } else {
                 // Else launch the selected app pair
-                launchFromTaskbar(recents, view, fi.contents);
-                mControllers.uiController.onTaskbarIconLaunched(fi);
+                launchFromTaskbar(recents, view, api.getContents());
+                mControllers.uiController.onTaskbarIconLaunched(api);
                 mControllers.taskbarStashController.updateAndAnimateTransientTaskbar(true);
             }
         } else if (tag instanceof WorkspaceItemInfo) {
@@ -1227,13 +1231,13 @@ public class TaskbarActivityContext extends BaseTaskbarContext {
             return;
         }
 
-        boolean findExactPairMatch = itemInfos.size() == 2;
+        boolean isLaunchingAppPair = itemInfos.size() == 2;
         // Convert the list of ItemInfo instances to a list of ComponentKeys
         List<ComponentKey> componentKeys =
                 itemInfos.stream().map(ItemInfo::getComponentKey).toList();
         recents.getSplitSelectController().findLastActiveTasksAndRunCallback(
                 componentKeys,
-                findExactPairMatch,
+                isLaunchingAppPair,
                 foundTasks -> {
                     @Nullable Task foundTask = foundTasks[0];
                     if (foundTask != null) {
@@ -1247,10 +1251,18 @@ public class TaskbarActivityContext extends BaseTaskbarContext {
                         }
                     }
 
-                    if (findExactPairMatch) {
-                        // We did not find the app pair we were looking for, so launch one.
-                        recents.getSplitSelectController().getAppPairsController().launchAppPair(
-                                (AppPairIcon) launchingIconView);
+                    if (isLaunchingAppPair) {
+                        // Finish recents animation if it's running before launching to ensure
+                        // we get both leashes for the animation
+                        mControllers.uiController.setSkipNextRecentsAnimEnd();
+                        recents.switchToScreenshot(() ->
+                                recents.finishRecentsAnimation(true /*toRecents*/,
+                                        false /*shouldPip*/,
+                                        () -> recents
+                                                .getSplitSelectController()
+                                                .getAppPairsController()
+                                                .launchAppPair((AppPairIcon) launchingIconView,
+                                                        -1 /*cuj*/)));
                     } else {
                         startItemInfoActivity(itemInfos.get(0));
                     }
@@ -1406,24 +1418,7 @@ public class TaskbarActivityContext extends BaseTaskbarContext {
         });
     }
 
-    public void hideTaskbarWhenFolding() {
-        AnimatedFloat alphaAnim = mControllers.taskbarDragLayerController.getTaskbarAlpha();
-        alphaAnim.cancelAnimation();
-        alphaAnim.updateValue(0);
-        ObjectAnimator animator = alphaAnim.animateToValue(1).setDuration(0);
-        animator.setStartDelay(TASKBAR_REAPPEAR_DELAY_MS);
-        animator.start();
-    }
-
-    public void cancelHideTaskbarWhenFolding() {
-        mControllers.taskbarDragLayerController.getTaskbarAlpha().cancelAnimation();
-    }
-
-    public void resetHideTaskbarWhenUnfolding() {
-        mControllers.taskbarDragLayerController.getTaskbarAlpha().updateValue(1);
-    }
-
-    protected boolean isUserSetupComplete() {
+    public boolean isUserSetupComplete() {
         return mIsUserSetupComplete;
     }
 
@@ -1459,7 +1454,8 @@ public class TaskbarActivityContext extends BaseTaskbarContext {
             ((LauncherTaskbarUIController) uiController).addLauncherVisibilityChangedAnimation(
                     fullAnimation, duration);
         }
-        mControllers.taskbarStashController.addUnstashToHotseatAnimation(fullAnimation, duration);
+        mControllers.taskbarStashController.addUnstashToHotseatAnimationFromSuw(fullAnimation,
+                duration);
 
         View allAppsButton = mControllers.taskbarViewController.getAllAppsButtonView();
         if (allAppsButton != null && !FeatureFlags.ENABLE_ALL_APPS_BUTTON_IN_HOTSEAT.get()) {

@@ -401,8 +401,12 @@ public class BaseOverview extends LauncherInstrumentation.VisibleContainer {
         if (isTablet && Math.abs(task.getExactCenterX() - mLauncher.getExactScreenCenterX()) >= 1) {
             return false;
         }
-        // Overview actions aren't visible for split screen tasks.
-        return !task.isTaskSplit();
+        if (task.isTaskSplit() && (!mLauncher.isAppPairsEnabled() || !isTablet)) {
+            // Overview actions aren't visible for split screen tasks, except for save app pair
+            // button on tablets.
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -450,10 +454,18 @@ public class BaseOverview extends LauncherInstrumentation.VisibleContainer {
     private void verifyActionsViewVisibility() {
         try (LauncherInstrumentation.Closable c = mLauncher.addContextLayer(
                 "want to assert overview actions view visibility")) {
+            boolean isTablet = mLauncher.isTablet();
+            OverviewTask task = isTablet ? getFocusedTaskForTablet() : getCurrentTask();
+
             if (isActionsViewVisible()) {
-                mLauncher.waitForOverviewObject("action_buttons");
+                if (task.isTaskSplit()) {
+                    mLauncher.waitForOverviewObject("action_save_app_pair");
+                } else {
+                    mLauncher.waitForOverviewObject("action_buttons");
+                }
             } else {
                 mLauncher.waitUntilOverviewObjectGone("action_buttons");
+                mLauncher.waitUntilOverviewObjectGone("action_save_app_pair");
             }
         }
     }
